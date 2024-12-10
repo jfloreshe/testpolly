@@ -4,6 +4,7 @@ using System.Data.Common;
 using System.Data.SqlClient;
 using System.Linq;
 using System.Reflection.Metadata;
+using System.Threading.Tasks;
 using Microsoft.Data.SqlClient;
 using Microsoft.Extensions.Logging;
 using Polly;
@@ -19,6 +20,7 @@ namespace testpolly
         public void HandleError(Exception ex)
         {
             HandleKafkaErrors(ex);
+            HandleDbErrors(ex);
             HandleInternalErrors(ex);
             throw ex;
         }
@@ -49,7 +51,7 @@ namespace testpolly
             //al asegurarnos debemos verificar si nuestro tipo de error es candidato para retry y circuitbreaker
             long clusterCode = 5000000000;
             long specificCode = 1000000;
-            throw new InfrastructureException(
+            throw new KafkaInfrastructureException(
                 $"Kafka error => {ex.Message}; {ex.InnerException?.Message}",
                 GetMsCodeError() + clusterCode + specificCode,
                 ex)
@@ -57,32 +59,29 @@ namespace testpolly
                     CircuitBreaker = true,
                     Retry = true
                 };
-
-
-            // SqlException sqlEx and  => 
-            //                         
-            // DbException dbEx => dbEx.Message.Contains("timeout", StringComparison.OrdinalIgnoreCase) throw new InternalException(),
-            // _ => throw new Exception(ex);
-
+        }
+        
+        private void HandleDbErrors(Exception ex)
+        {
+            //validar si es un error de kafka
+            if (!ex.Message.Contains("db")) return;
+            //al asegurarnos debemos verificar si nuestro tipo de error es candidato para retry y circuitbreaker
+            long clusterCode = 4000000000;
+            long specificCode = 1000000;
+            throw new DbInfrastructureException(
+                $"db error => {ex.Message}; {ex.InnerException?.Message}",
+                GetMsCodeError() + clusterCode + specificCode,
+                ex)
+            {
+                CircuitBreaker = true,
+                Retry = true
+            };
         }
 
         private long GetMsCodeError()
         {
             return 1000000000000;
         }
-        
-        //
-        // private bool IsSimulationException(Exception ex, out InternalException? iE)
-        // {
-        //     iE = null;
-        //     var result = ex switch
-        //     {
-        //         InternalException iEx => iEx.IdError == Utilitarios.ERRORCONTABILIDAD.Simulado,
-        //         _ => false
-        //     };
-        //     if (result) iE = (InternalException)ex;
-        //     return result;
-        // }
     }
     public class InternalException : ApplicationException
     {
@@ -91,6 +90,15 @@ namespace testpolly
         {
             IdError = idError;
         }
+    }
+
+    public class DbInfrastructureException : InfrastructureException
+    {
+        public DbInfrastructureException(string message, long idError, Exception? innerException = null): base(message, idError, innerException){}
+    }
+    public class KafkaInfrastructureException : InfrastructureException
+    {
+        public KafkaInfrastructureException(string message, long idError, Exception? innerException = null): base(message, idError, innerException){}
     }
     public class InfrastructureException : ApplicationException
     {
@@ -128,7 +136,8 @@ namespace testpolly
         {
             if (a == 1)
             {
-                throw new InternalException("bad luck, validation failed", 100); //100 code user defined
+                // throw new InternalException("bad luck, validation failed", 100); //100 code user defined
+                throw new Exception("db");
             }
 
             return a;
@@ -144,30 +153,118 @@ namespace testpolly
         }
     }
     
-    public static class PolicyRegistry
+    // public static class PolicyRegistry
+    // {
+    //     private static readonly ILogger Logger = LoggerFactory.Create(builder =>
+    //     {
+    //         builder.AddConsole();
+    //     }).CreateLogger("CircuitBreaker");
+    //
+    //     public static RetryPolicy NoRetryPolicy = Policy
+    //         .Handle<InternalException>()
+    //         .WaitAndRetry(0, _ => TimeSpan.FromSeconds(1),
+    //             onRetry: (exception, delay, context) => Console.WriteLine($"{"Retry",-10}{delay,-10:ss\\.fff}: {exception.GetType().Name}"));
+    //     public static CircuitBreakerPolicy InfraCircuitBreakerPolicy { get; } =
+    //         Policy
+    //             .Handle<InfrastructureException>()
+    //             .CircuitBreaker(
+    //                 exceptionsAllowedBeforeBreaking: 3,
+    //                 durationOfBreak: TimeSpan.FromSeconds(10),
+    //                 onBreak: (exception, duration) =>
+    //                     Logger.LogWarning(
+    //                         $"Circuit OPEN for {duration.TotalSeconds} seconds due to: {exception.Message}"),
+    //                 onReset: () =>
+    //                     Logger.LogInformation("Circuit CLOSED - Reset"),
+    //                 onHalfOpen: () =>
+    //                     Logger.LogInformation("Circuit HALF-OPEN - Testing recovery")
+    //             );
+    // }
+
+    public class ResilenceStrategyBuilder
     {
-        private static readonly ILogger Logger = LoggerFactory.Create(builder =>
+        private ResiliencePipelineBuilder? builder;
+        private static readonly ValueTask _valueTaskCompleted = new ValueTask(Task.CompletedTask);
+        public static CircuitBreakerStateProvider cbDbState = new CircuitBreakerStateProvider();
+        public static CircuitBreakerStrategyOptions cbDbOptions = new CircuitBreakerStrategyOptions
         {
-            builder.AddConsole();
-        }).CreateLogger("CircuitBreaker");
-    
-        public static RetryPolicy NoRetryPolicy = Policy
-            .Handle<InternalException>()
-            .WaitAndRetry(0, _ => TimeSpan.FromSeconds(1),
-                onRetry: (exception, delay, context) => Console.WriteLine($"{"Retry",-10}{delay,-10:ss\\.fff}: {exception.GetType().Name}"));
-        public static CircuitBreakerPolicy InfraCircuitBreakerPolicy { get; } =
-            Policy
-                .Handle<InfrastructureException>()
-                .CircuitBreaker(
-                    exceptionsAllowedBeforeBreaking: 3,
-                    durationOfBreak: TimeSpan.FromSeconds(10),
-                    onBreak: (exception, duration) =>
-                        Logger.LogWarning(
-                            $"Circuit OPEN for {duration.TotalSeconds} seconds due to: {exception.Message}"),
-                    onReset: () =>
-                        Logger.LogInformation("Circuit CLOSED - Reset"),
-                    onHalfOpen: () =>
-                        Logger.LogInformation("Circuit HALF-OPEN - Testing recovery")
-                );
+            BreakDuration = TimeSpan.FromSeconds(10),
+            SamplingDuration = TimeSpan.FromSeconds(10),
+            FailureRatio = 0.5,
+            StateProvider = cbDbState,
+            MinimumThroughput = 7,
+            ShouldHandle = new PredicateBuilder().Handle<DbInfrastructureException>(e => e.CircuitBreaker),
+            OnOpened = arguments =>
+            {
+                Console.WriteLine("CBDB OnOpened <=============================");
+                return _valueTaskCompleted;  
+            },
+            OnClosed = arguments =>
+            {
+                Console.WriteLine("CBDB OnClosed <=============================");
+                return _valueTaskCompleted;
+            },
+            OnHalfOpened = arguments =>
+            {
+                Console.WriteLine("CBDB OnHalfOpened <=============================");
+                return _valueTaskCompleted;
+            }
+        };
+        
+        public static CircuitBreakerStateProvider cbKakfaState = new CircuitBreakerStateProvider();
+        public static CircuitBreakerStrategyOptions cbKafkaOptions = new CircuitBreakerStrategyOptions
+        {
+            BreakDuration = TimeSpan.FromSeconds(10),
+            SamplingDuration = TimeSpan.FromSeconds(10),
+            FailureRatio = 0.5,
+            StateProvider = cbKakfaState,
+            MinimumThroughput = 7,
+            ShouldHandle = new PredicateBuilder().Handle<KafkaInfrastructureException>(e => e.CircuitBreaker),
+            OnOpened = arguments =>
+            {
+                Console.WriteLine("CBKafka OnOpened <=============================");
+                return _valueTaskCompleted;  
+            },
+            OnClosed = arguments =>
+            {
+                Console.WriteLine("CBKafka OnClosed <=============================");
+                return _valueTaskCompleted;
+            },
+            OnHalfOpened = arguments =>
+            {
+                Console.WriteLine("CBKafka OnHalfOpened <=============================");
+                return _valueTaskCompleted;
+            }
+        };
+
+        public ResiliencePipelineBuilder CreateNewPipeline()
+        {
+            builder = new ResiliencePipelineBuilder();
+            return builder;
+        }
+        public ResiliencePipelineBuilder AddCircuiBreak(CircuitBreakerStrategyOptions cbOptions)
+        {
+            if (builder == null)
+                throw new Exception("Se necesita inicializar el Pipeline, use CreateNewPipeline primero");
+
+            return builder.AddCircuitBreaker(cbOptions);
+        }
+        
+        public ResiliencePipelineBuilder AddRetry(RetryStrategyOptions retryOptions)
+        {
+            if (builder == null)
+                throw new Exception("Se necesita inicializar el Pipeline, use CreateNewPipeline primero");
+
+            return builder.AddRetry(retryOptions);
+        }
+        
+        
+
+        public ResiliencePipeline Build()
+        {
+            if (builder == null)
+                throw new Exception("Se necesita inicializar el Pipeline, use CreateNewPipeline primero");
+            
+            return builder.Build();
+        }
     }
 }
