@@ -1,20 +1,24 @@
 {
   "format": 1,
   "restore": {
-    "D:\\temp\\testpolly\\testpolly\\testpolly.csproj": {}
+    "D:\\work\\poc\\testpolly\\testpolly\\testpolly.csproj": {}
   },
   "projects": {
-    "D:\\temp\\testpolly\\testpolly\\testpolly.csproj": {
+    "D:\\work\\poc\\testpolly\\testpolly\\testpolly.csproj": {
       "version": "1.0.0",
       "restore": {
-        "projectUniqueName": "D:\\temp\\testpolly\\testpolly\\testpolly.csproj",
+        "projectUniqueName": "D:\\work\\poc\\testpolly\\testpolly\\testpolly.csproj",
         "projectName": "testpolly",
-        "projectPath": "D:\\temp\\testpolly\\testpolly\\testpolly.csproj",
-        "packagesPath": "C:\\Users\\user\\.nuget\\packages\\",
-        "outputPath": "D:\\temp\\testpolly\\testpolly\\obj\\",
+        "projectPath": "D:\\work\\poc\\testpolly\\testpolly\\testpolly.csproj",
+        "packagesPath": "C:\\Users\\jflor\\.nuget\\packages\\",
+        "outputPath": "D:\\work\\poc\\testpolly\\testpolly\\obj\\",
         "projectStyle": "PackageReference",
+        "fallbackFolders": [
+          "C:\\Program Files (x86)\\Microsoft Visual Studio\\Shared\\NuGetPackages"
+        ],
         "configFilePaths": [
-          "C:\\Users\\user\\AppData\\Roaming\\NuGet\\NuGet.Config",
+          "C:\\Users\\jflor\\AppData\\Roaming\\NuGet\\NuGet.Config",
+          "C:\\Program Files (x86)\\NuGet\\Config\\Microsoft.VisualStudio.FallbackLocation.config",
           "C:\\Program Files (x86)\\NuGet\\Config\\Microsoft.VisualStudio.Offline.config"
         ],
         "originalTargetFrameworks": [
@@ -22,8 +26,7 @@
         ],
         "sources": {
           "C:\\Program Files (x86)\\Microsoft SDKs\\NuGetPackages\\": {},
-          "https://api.nuget.org/v3/index.json": {},
-          "https://nexus.sreasons.com/repository/SmartReasonsNuget": {}
+          "https://api.nuget.org/v3/index.json": {}
         },
         "frameworks": {
           "netcoreapp3.1": {
@@ -71,7 +74,7 @@
               "privateAssets": "all"
             }
           },
-          "runtimeIdentifierGraphPath": "C:\\Program Files\\dotnet\\sdk\\3.1.426\\RuntimeIdentifierGraph.json"
+          "runtimeIdentifierGraphPath": "C:\\Users\\jflor\\.dotnet\\sdk\\3.1.426\\RuntimeIdentifierGraph.json"
         }
       }
     }
